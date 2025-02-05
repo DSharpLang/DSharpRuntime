@@ -6,6 +6,7 @@ Code example:
 import std::file; 
 import std::conv;
 
+a = 5;
 println(a); 
 b = 10; 
 println(b); 
