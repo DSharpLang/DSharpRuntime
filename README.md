@@ -9,7 +9,7 @@ import std::conv;
 println(a); 
 b = 10; 
 println(b); 
-c = "Hello, World""; 
+c = "Hello, World"; 
 println(c); 
 std::file.write("0:\\testOutput.txt", "This is a test file."); 
 d = std::file.read("0:\\testOutput.txt");
