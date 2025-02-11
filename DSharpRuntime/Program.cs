@@ -1,2 +1,18 @@
-﻿// See https://aka.ms/new-console-template for more information
-Console.WriteLine("Hello, World!");
+﻿using DSharpRuntime.src;
+
+class Program
+{
+	DSharpInterpreter dSharpInterpreter = new DSharpInterpreter();
+	static void Main(string[] args)
+	{
+		if (args.Length == 0)
+		{
+			Console.WriteLine("Usage: DSharpRuntime <file>");
+			return;
+		}
+
+		var code = File.ReadAllText(args[0]);
+
+		dSharpInterpreter.Interpret(code);
+	}
+}
