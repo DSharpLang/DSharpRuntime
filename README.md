@@ -24,4 +24,16 @@ std::file.read("test.txt");
 println(std::file.read("test.txt"));
 intValue = std::conv.to(int, "123");
 println(intValue);
+
+// Déclaration de la struct
+struct Person {
+    field name;
+    field age;
+};
+
+// Instanciation de la struct
+person = new struct Person();
+person.name = "Alice";
+person.age = 30;
+printlnf("Name: {}, Age: {}", person.name, person.age);
 ```
