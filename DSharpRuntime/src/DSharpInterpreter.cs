@@ -13,6 +13,7 @@ namespace DSharpRuntime.src
 		private Dictionary<string, IModule> importedModules = new Dictionary<string, IModule>();
 		private Dictionary<string, IModule> availableModules = new Dictionary<string, IModule>();
 		private Dictionary<string, Action> methods = new Dictionary<string, Action>();
+		private Dictionary<string, StructDefinition> structs = new Dictionary<string, StructDefinition>();
 		public object? LastResult { get; set; }
 
 		public DSharpInterpreter()
@@ -100,6 +101,15 @@ namespace DSharpRuntime.src
 			{
 				DeclareMethod(line.Substring(5).Trim());
 			}
+			else if (line.StartsWith("struct "))
+			{
+				DeclareStruct(line.Substring(7).Trim());
+			}
+			else if (line.StartsWith("field "))
+			{
+				// Ignore field definitions in ExecuteLine
+				return;
+			}
 			else if (line == "{")
 			{
 				EnterScope();
@@ -111,6 +121,13 @@ namespace DSharpRuntime.src
 			else if (line.Contains("="))
 			{
 				AssignVariable(line);
+			}
+			else if (line.Contains("{") && line.Contains("}"))
+			{
+				var parts = line.Split(new[] { '{', '}' }, StringSplitOptions.RemoveEmptyEntries);
+				var structName = parts[0].Trim();
+				var structBody = parts[1].Trim();
+				InstantiateStruct(structName, structBody);
 			}
 			else if (methods.ContainsKey(line))
 			{
@@ -158,6 +175,17 @@ namespace DSharpRuntime.src
 			{
 				return Variables[expression];
 			}
+			else if (expression.Contains("."))
+			{
+				try
+				{
+					return EvaluateStructField(expression);
+				}
+				catch (Exception)
+				{
+					return EvaluateModuleExpression(expression);
+				}
+			}
 			else
 			{
 				foreach (var scope in scopeStack)
@@ -181,6 +209,29 @@ namespace DSharpRuntime.src
 			});
 		}
 
+		private object EvaluateStructField(string expression)
+		{
+			var parts = expression.Split('.');
+			var structName = parts[0];
+			var fieldName = parts[1];
+
+			if (Variables.ContainsKey(structName) && Variables[structName] is Dictionary<string, object> structInstance)
+			{
+				if (structInstance.ContainsKey(fieldName))
+				{
+					return structInstance[fieldName];
+				}
+				else
+				{
+					throw new Exception($"Field '{fieldName}' not found in struct '{structName}'");
+				}
+			}
+			else
+			{
+				throw new Exception($"Struct '{structName}' not found");
+			}
+		}
+
 		private void Println(string expression)
 		{
 			Console.WriteLine(EvaluateExpression(expression));
@@ -197,14 +248,13 @@ namespace DSharpRuntime.src
 				args[i - 1] = EvaluateExpression(parts[i].Trim());
 			}
 
-			var formattedString = format;
-			for (int i = 0; i < args.Length; i++)
-			{
-				formattedString = formattedString.Replace("{}", args[i].ToString());
-			}
+			// Replace each occurrence of '{}' with {0}, {1}, etc.
+			int index = 0;
+			format = Regex.Replace(format, @"{}", _ => $"{{{index++}}}");
 
-			Console.WriteLine(formattedString);
+			Console.WriteLine(string.Format(format, args));
 		}
+
 
 		private string[] SplitArguments(string input)
 		{
@@ -217,7 +267,70 @@ namespace DSharpRuntime.src
 			var parts = line.Split('=');
 			var variableName = parts[0].Trim();
 			var expression = parts[1].Trim();
-			Variables[variableName] = EvaluateExpression(expression);
+
+			if (expression.StartsWith("new struct "))
+			{
+				var structName = expression.Substring(11).Trim();
+				Variables[variableName] = InstantiateStruct(structName);
+			}
+			else if (expression.Contains("{") && expression.Contains("}"))
+			{
+				var structName = expression.Substring(0, expression.IndexOf('{')).Trim();
+				var structBody = expression.Substring(expression.IndexOf('{')).Trim();
+				Variables[variableName] = InstantiateStruct(structName, structBody);
+			}
+			else
+			{
+				Variables[variableName] = EvaluateExpression(expression);
+			}
+		}
+
+		private object InstantiateStruct(string structName)
+		{
+			if (!structs.ContainsKey(structName))
+			{
+				throw new Exception($"Struct '{structName}' not defined");
+			}
+
+			var structDefinition = structs[structName];
+			var structInstance = new Dictionary<string, object>();
+
+			foreach (var field in structDefinition.Fields.Keys)
+			{
+				structInstance[field] = null;
+			}
+
+			return structInstance;
+		}
+
+		private object InstantiateStruct(string structName, string structBody)
+		{
+			if (!structs.ContainsKey(structName))
+			{
+				throw new Exception($"Struct '{structName}' not defined");
+			}
+
+			var structDefinition = structs[structName];
+			var structInstance = new Dictionary<string, object>();
+			var fieldAssignments = structBody.Trim('{', '}').Split(',');
+
+			foreach (var assignment in fieldAssignments)
+			{
+				var fieldParts = assignment.Split('=');
+				var fieldName = fieldParts[0].Trim();
+				var fieldValue = EvaluateExpression(fieldParts[1].Trim());
+
+				if (structDefinition.Fields.ContainsKey(fieldName))
+				{
+					structInstance[fieldName] = fieldValue;
+				}
+				else
+				{
+					throw new Exception($"Field '{fieldName}' not defined in struct '{structName}'");
+				}
+			}
+
+			return structInstance;
 		}
 
 		private void ExecuteModuleCommand(string line)
@@ -274,6 +387,26 @@ namespace DSharpRuntime.src
 			methods[methodName] = () => Interpret(methodBody);
 		}
 
+		private void DeclareStruct(string structDeclaration)
+		{
+			var parts = structDeclaration.Split(new[] { ' ' }, 2);
+			var structName = parts[0];
+			var structBody = parts[1].Trim().TrimStart('{').Trim();
+
+			var fields = new Dictionary<string, string>();
+			var fieldLines = structBody.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
+			foreach (var fieldLine in fieldLines)
+			{
+				var fieldParts = fieldLine.Trim().Split(' ');
+				if (fieldParts.Length == 2 && fieldParts[0] == "field")
+				{
+					fields[fieldParts[1]] = fieldParts[0];
+				}
+			}
+
+			structs[structName] = new StructDefinition(structName, fields);
+		}
+
 		private void EnterScope()
 		{
 			scopeStack.Push(new Dictionary<string, object>(Variables));
@@ -326,7 +459,16 @@ namespace DSharpRuntime.src
 			}
 		}
 	}
+
+	public class StructDefinition
+	{
+		public string Name { get; }
+		public Dictionary<string, string> Fields { get; }
+
+		public StructDefinition(string name, Dictionary<string, string> fields)
+		{
+			Name = name;
+			Fields = fields;
+		}
+	}
 }
-
-
-
