@@ -13,8 +13,6 @@ void greet {
 
 greet;
 
-name = "DSharp";
-
 Name = "Dsharp";
 void personalizedGreet {
     printlnf("Hello, {}", Name);
