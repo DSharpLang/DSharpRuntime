@@ -2,7 +2,7 @@
 
 class Program
 {
-	DSharpInterpreter dSharpInterpreter = new DSharpInterpreter();
+	static DSharpInterpreter dSharpInterpreter = new DSharpInterpreter();
 	static void Main(string[] args)
 	{
 		if (args.Length == 0)
