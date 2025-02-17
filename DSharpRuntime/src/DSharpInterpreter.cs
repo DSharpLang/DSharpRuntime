@@ -179,6 +179,10 @@ namespace DSharpRuntime.src
 			{
 				return Variables[expression];
 			}
+			else if (IsArrayElementExpression(expression))
+			{
+				return EvaluateArrayElementExpression(expression);
+			}
 			else if (expression.Contains("."))
 			{
 				if (IsStructExpression(expression))
@@ -199,14 +203,63 @@ namespace DSharpRuntime.src
 						return scope[expression];
 					}
 				}
-				throw new Exception($"Unknown expression: {expression}");
+				throw new Exception($"Unknown expression: {expression} - This expression couldn't be evaluated.");
 			}
 		}
 
-		private bool IsStructExpression(string expression)
+		public void PrintArray(object arr)
 		{
-			var parts = expression.Split('.');
-			return Variables.ContainsKey(parts[0]) && Variables[parts[0]] is Dictionary<string, object>;
+			if (arr is Array array)
+			{
+				var result = string.Join(", ", array.Cast<object>());
+				Console.WriteLine(result);
+			}
+			else if (arr is List<object> list)
+			{
+				var result = string.Join(", ", list);
+				Console.WriteLine(result);
+			}
+			else
+			{
+				Console.WriteLine(arr.ToString());
+			}
+		}
+
+
+		private bool IsArrayElementExpression(string expression)
+		{
+			var match = Regex.Match(expression, @"(\w+)\[(\d+)\]");
+			return match.Success && Variables.ContainsKey(match.Groups[1].Value) && Variables[match.Groups[1].Value] is List<object>;
+		}
+
+		private object EvaluateArrayElementExpression(string expression)
+		{
+			var match = Regex.Match(expression, @"(\w+)\[(\d+)\]");
+			if (match.Success)
+			{
+				var arrayName = match.Groups[1].Value;
+				var index = int.Parse(match.Groups[2].Value);
+
+				if (Variables.ContainsKey(arrayName) && Variables[arrayName] is List<object> arrayInstance)
+				{
+					if (index >= 0 && index < arrayInstance.Count)
+					{
+						return arrayInstance[index];
+					}
+					else
+					{
+						throw new Exception($"Index '{index}' out of bounds for array '{arrayName}'");
+					}
+				}
+				else
+				{
+					throw new Exception($"Array '{arrayName}' not found");
+				}
+			}
+			else
+			{
+				throw new Exception($"Invalid array element expression: {expression}");
+			}
 		}
 
 		private object EvaluateArrayExpression(string expression)
@@ -220,6 +273,13 @@ namespace DSharpRuntime.src
 			{
 				throw new Exception($"Array '{arrayName}' not found");
 			}
+		}
+
+
+		private bool IsStructExpression(string expression)
+		{
+			var parts = expression.Split('.');
+			return Variables.ContainsKey(parts[0]) && Variables[parts[0]] is Dictionary<string, object>;
 		}
 
 		private string EvaluateStringExpression(string expression)
@@ -280,7 +340,20 @@ namespace DSharpRuntime.src
 
 			for (int i = 1; i < parts.Length; i++)
 			{
-				args[i - 1] = EvaluateExpression(parts[i].Trim());
+				var evaluated = EvaluateExpression(parts[i].Trim());
+				// Check if evaluated result is a list or array
+				if (evaluated is Array array)
+				{
+					args[i - 1] = string.Join(", ", array.Cast<object>());
+				}
+				else if (evaluated is List<object> list)
+				{
+					args[i - 1] = string.Join(", ", list);
+				}
+				else
+				{
+					args[i - 1] = evaluated.ToString();
+				}
 			}
 
 			// Replace each occurrence of '{}' with {0}, {1}, etc.
@@ -312,6 +385,16 @@ namespace DSharpRuntime.src
 				var structName = expression.Substring(0, expression.IndexOf('{')).Trim();
 				var structBody = expression.Substring(expression.IndexOf('{')).Trim();
 				Variables[variableName] = InstantiateStruct(structName, structBody);
+			}
+			else if (expression.StartsWith("[") && expression.EndsWith("]"))
+			{
+				var arrayElements = expression.Substring(1, expression.Length - 2).Split(',');
+				var arrayInstance = new List<object>();
+				foreach (var element in arrayElements)
+				{
+					arrayInstance.Add(EvaluateExpression(element.Trim()));
+				}
+				Variables[variableName.TrimEnd(new char[] { '[', ']' })] = arrayInstance;
 			}
 			else
 			{
