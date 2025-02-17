@@ -171,17 +171,21 @@ namespace DSharpRuntime.src
 			{
 				return intValue;
 			}
+			else if (expression.EndsWith("[]"))
+			{
+				return EvaluateArrayExpression(expression);
+			}
 			else if (Variables.ContainsKey(expression))
 			{
 				return Variables[expression];
 			}
 			else if (expression.Contains("."))
 			{
-				try
+				if (IsStructExpression(expression))
 				{
-					return EvaluateStructField(expression);
+					return EvaluateStructExpression(expression);
 				}
-				catch (Exception)
+				else
 				{
 					return EvaluateModuleExpression(expression);
 				}
@@ -195,7 +199,26 @@ namespace DSharpRuntime.src
 						return scope[expression];
 					}
 				}
-				return EvaluateModuleExpression(expression);
+				throw new Exception($"Unknown expression: {expression}");
+			}
+		}
+
+		private bool IsStructExpression(string expression)
+		{
+			var parts = expression.Split('.');
+			return Variables.ContainsKey(parts[0]) && Variables[parts[0]] is Dictionary<string, object>;
+		}
+
+		private object EvaluateArrayExpression(string expression)
+		{
+			var arrayName = expression.Substring(0, expression.Length - 2);
+			if (Variables.ContainsKey(arrayName) && Variables[arrayName] is List<object> arrayInstance)
+			{
+				return arrayInstance;
+			}
+			else
+			{
+				throw new Exception($"Array '{arrayName}' not found");
 			}
 		}
 
@@ -209,7 +232,19 @@ namespace DSharpRuntime.src
 			});
 		}
 
-		private object EvaluateStructField(string expression)
+		private object EvaluateStructField(Dictionary<string, object> structInstance, string fieldName)
+		{
+			if (structInstance.ContainsKey(fieldName))
+			{
+				return structInstance[fieldName];
+			}
+			else
+			{
+				throw new Exception($"Field '{fieldName}' not found in struct");
+			}
+		}
+
+		private object EvaluateStructExpression(string expression)
 		{
 			var parts = expression.Split('.');
 			var structName = parts[0];
@@ -217,20 +252,20 @@ namespace DSharpRuntime.src
 
 			if (Variables.ContainsKey(structName) && Variables[structName] is Dictionary<string, object> structInstance)
 			{
-				if (structInstance.ContainsKey(fieldName))
-				{
-					return structInstance[fieldName];
-				}
-				else
-				{
-					throw new Exception($"Field '{fieldName}' not found in struct '{structName}'");
-				}
+				return EvaluateStructField(structInstance, fieldName);
 			}
 			else
 			{
 				throw new Exception($"Struct '{structName}' not found");
 			}
 		}
+
+		private object EvaluateModuleCommand(string moduleName, string command)
+		{
+			importedModules[moduleName].Execute(command, this);
+			return LastResult;
+		}
+
 
 		private void Println(string expression)
 		{
@@ -254,7 +289,6 @@ namespace DSharpRuntime.src
 
 			Console.WriteLine(string.Format(format, args));
 		}
-
 
 		private string[] SplitArguments(string input)
 		{
