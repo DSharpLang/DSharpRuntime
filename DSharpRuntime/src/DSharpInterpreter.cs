@@ -81,6 +81,10 @@ namespace DSharpRuntime.src
 			{
 				return;
 			}
+			else if (line.StartsWith("if(")) // Ajout du support de if/else if/else
+			{
+				ExecuteIfElse(line);
+			}
 			else if (line.StartsWith("import "))
 			{
 				ImportModule(line.Substring(7).Trim());
@@ -138,6 +142,143 @@ namespace DSharpRuntime.src
 				ExecuteModuleCommand(line);
 			}
 		}
+
+		private void ExecuteIfElse(string line)
+		{
+			// Cette méthode gère une chaîne de type :
+			// if(condition1) { bloc1 } else if (condition2) { bloc2 } else { bloc3 }
+			int index = 0;
+			var branches = new List<(string? condition, string block)>();
+
+			while (index < line.Length)
+			{
+				// Traiter les clauses "if" ou "else if"
+				if (line.Substring(index).TrimStart().StartsWith("if(") ||
+					line.Substring(index).TrimStart().StartsWith("elseif(")) // Correction ici
+				{
+					// Positionne l'index sur la parenthèse ouvrante
+					int parenOpen = line.IndexOf('(', index);
+					int parenClose = line.IndexOf(')', parenOpen);
+					if (parenOpen < 0 || parenClose < 0)
+						throw new Exception("Syntaxe invalide dans l'instruction if/else.");
+
+					string condition = line.Substring(parenOpen + 1, parenClose - parenOpen - 1).Trim();
+
+					// Rechercher le bloc associé (entre les accolades)
+					int braceOpen = line.IndexOf('{', parenClose);
+					if (braceOpen < 0)
+						throw new Exception("Bloc manquant après la condition.");
+					int braceClose = FindMatchingBrace(line, braceOpen);
+					string block = line.Substring(braceOpen + 1, braceClose - braceOpen - 1).Trim();
+
+					branches.Add((condition, block));
+					index = braceClose + 1;
+				}
+				else if (line.Substring(index).TrimStart().StartsWith("else"))
+				{
+					// On s'attend à "else { bloc }"
+					int elseIndex = line.IndexOf("else", index);
+					int braceOpen = line.IndexOf('{', elseIndex);
+					if (braceOpen < 0)
+						throw new Exception("Bloc manquant après 'else'.");
+					int braceClose = FindMatchingBrace(line, braceOpen);
+					string block = line.Substring(braceOpen + 1, braceClose - braceOpen - 1).Trim();
+
+					branches.Add((null, block));
+					index = braceClose + 1;
+				}
+				else
+				{
+					break;
+				}
+			}
+
+			// Exécution des branches dans l'ordre
+			foreach (var branch in branches)
+			{
+				if (branch.condition != null)
+				{
+					if (EvaluateCondition(branch.condition))
+					{
+						Interpret(branch.block);
+						return;
+					}
+				}
+				else
+				{
+					Interpret(branch.block);
+					return;
+				}
+			}
+		}
+
+
+		private int FindMatchingBrace(string input, int braceOpenIndex)
+		{
+			int depth = 0;
+			for (int i = braceOpenIndex; i < input.Length; i++)
+			{
+				if (input[i] == '{')
+					depth++;
+				else if (input[i] == '}')
+				{
+					depth--;
+					if (depth == 0)
+						return i;
+				}
+			}
+			throw new Exception("Aucune accolade fermante trouvée.");
+		}
+
+		private bool EvaluateCondition(string condition)
+		{
+			// Support de conditions simples avec les opérateurs : ==, !=, >=, <=, >, <
+			var match = Regex.Match(condition, @"^(.*?)\s*(==|!=|>=|<=|>|<)\s*(.*?)$");
+			if (match.Success)
+			{
+				var leftVal = EvaluateExpression(match.Groups[1].Value.Trim());
+				var rightVal = EvaluateExpression(match.Groups[3].Value.Trim());
+				string op = match.Groups[2].Value;
+
+				// Comparaison en fonction du type
+				try
+				{
+					decimal left = Convert.ToDecimal(leftVal);
+					decimal right = Convert.ToDecimal(rightVal);
+					switch (op)
+					{
+						case "==": return left == right;
+						case "!=": return left != right;
+						case ">": return left > right;
+						case "<": return left < right;
+						case ">=": return left >= right;
+						case "<=": return left <= right;
+						default: throw new Exception($"Opérateur inconnu '{op}' dans la condition.");
+					}
+				}
+				catch
+				{
+					// Si la conversion en nombre échoue, on compare sous forme de chaîne
+					string left = leftVal?.ToString() ?? "";
+					string right = rightVal?.ToString() ?? "";
+					switch (op)
+					{
+						case "==": return left == right;
+						case "!=": return left != right;
+						default: throw new Exception("Opérateur non supporté pour la comparaison de chaînes.");
+					}
+				}
+			}
+			else
+			{
+				// Si l'expression ne contient pas d'opérateur, on évalue directement comme booléen.
+				var result = EvaluateExpression(condition);
+				if (result is bool b)
+					return b;
+				throw new Exception($"Condition invalide : {condition}");
+			}
+		}
+
 
 		private void ImportModule(string moduleName)
 		{
@@ -206,25 +347,6 @@ namespace DSharpRuntime.src
 				throw new Exception($"Unknown expression: {expression} - This expression couldn't be evaluated.");
 			}
 		}
-
-		public void PrintArray(object arr)
-		{
-			if (arr is Array array)
-			{
-				var result = string.Join(", ", array.Cast<object>());
-				Console.WriteLine(result);
-			}
-			else if (arr is List<object> list)
-			{
-				var result = string.Join(", ", list);
-				Console.WriteLine(result);
-			}
-			else
-			{
-				Console.WriteLine(arr.ToString());
-			}
-		}
-
 
 		private bool IsArrayElementExpression(string expression)
 		{

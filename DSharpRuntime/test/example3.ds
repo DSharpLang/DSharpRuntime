@@ -1,2 +1,5 @@
 ﻿arr = [1, 2, 3, 4, 5];
 printlnf("arr: {}", arr);
+
+someVar = 4;
+if(someVar == 2) { println("Somevar is = 2") } else { if(someVar >= 5) { printlnf("SomeVar is >= 5 and is {}", someVar) }  else { println("A is < 5 and is not 2.") } }
