@@ -1,6 +1,7 @@
 ﻿using CodeOS.Modules;
 using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Reflection;
 using System.Text.RegularExpressions;
 
@@ -21,6 +22,11 @@ namespace DSharpRuntime.src
 			// Enregistrer les modules disponibles
 			RegisterModule(new StdFile());
 			RegisterModule(new StdConv());
+			var modules = ModuleLoader.LoadModules("modules", this);
+			foreach (var module in modules)
+			{
+				RegisterModule(module);
+			}
 		}
 
 		public void Interpret(string code)
@@ -335,6 +341,10 @@ namespace DSharpRuntime.src
 					return EvaluateModuleExpression(expression);
 				}
 			}
+			else if (expression.StartsWith("math(") && expression.EndsWith(")"))
+			{
+				return EvaluateMathExpression(expression.Substring(5, expression.Length - 6));
+			}
 			else
 			{
 				foreach (var scope in scopeStack)
@@ -345,6 +355,20 @@ namespace DSharpRuntime.src
 					}
 				}
 				throw new Exception($"Unknown expression: {expression} - This expression couldn't be evaluated.");
+			}
+		}
+
+		private object EvaluateMathExpression(string expression)
+		{
+			try
+			{
+				var dataTable = new DataTable();
+				var result = dataTable.Compute(expression, string.Empty);
+				return Convert.ToDecimal(result);
+			}
+			catch (Exception ex)
+			{
+				throw new Exception($"Invalid math expression: {expression}. Error: {ex.Message}");
 			}
 		}
 
